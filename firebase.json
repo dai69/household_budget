@@ -1,0 +1,39 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "household-budget-b003a",
+          "appId": "1:435582516067:android:93ff28d6aa2fa1e8f7b156",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "household-budget-b003a",
+          "configurations": {
+            "android": "1:435582516067:android:93ff28d6aa2fa1e8f7b156",
+            "ios": "1:435582516067:ios:65eb8b796ee4f47df7b156",
+            "macos": "1:435582516067:ios:65eb8b796ee4f47df7b156",
+            "web": "1:435582516067:web:22c1a586e47538acf7b156",
+            "windows": "1:435582516067:web:4276d9d0d77a59b6f7b156"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

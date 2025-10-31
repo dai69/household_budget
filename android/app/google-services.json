@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "435582516067",
+    "project_id": "household-budget-b003a",
+    "storage_bucket": "household-budget-b003a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:435582516067:android:93ff28d6aa2fa1e8f7b156",
+        "android_client_info": {
+          "package_name": "com.example.household_budget"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBwvLhMf2-ybHEXm0TYBCgOnWcnn_nxyGA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
