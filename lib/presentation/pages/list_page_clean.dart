@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import '../../utils/global_keys.dart';
 // conditional import for web file IO
 import '../../utils/file_io_stub.dart' if (dart.library.html) '../../utils/file_io_web.dart';
 
 import '../../data/entry_provider.dart';
 import '../../data/category_provider.dart';
 import '../../domain/entry.dart';
+import '../../domain/template.dart';
+import '../../data/template_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ListPageClean extends ConsumerStatefulWidget {
   const ListPageClean({super.key});
@@ -25,7 +29,8 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
   final Set<EntryType> _filterTypes = <EntryType>{};
   DateTime? _filterStartDate;
   DateTime? _filterEndDate;
-  String? _filterCategoryId;
+  // support multiple selected categories
+  final Set<String> _filterCategoryIds = <String>{};
   String _sortField = 'date';
   bool _sortAsc = false;
 
@@ -156,12 +161,12 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
     try {
       await exportFile(filename, csv);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('全件エクスポートを開始しました')));
+      appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('全件エクスポートを開始しました')));
     } catch (e) {
       // fallback: copy to clipboard
       await Clipboard.setData(ClipboardData(text: csv));
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('クリップボードにCSVをコピーしました')));
+      appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('クリップボードにCSVをコピーしました')));
     }
   }
 
@@ -170,7 +175,9 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
       final content = await pickFileAndRead();
       if (content == null) {
         final controller = TextEditingController();
+        // ignore: use_build_context_synchronously
         final res = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('CSV 読み込み（貼り付け）'), content: SizedBox(width: 560, child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('ヘッダ: date,type,category,title,amount\n日付は yyyy/MM/dd 書式、type は 収入/支出'), TextField(controller: controller, maxLines: 12)])), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('読み込み'))]));
+        if (!context.mounted) return;
         if (res == true) {
           final text = controller.text.trim();
           if (text.isNotEmpty) {
@@ -184,7 +191,9 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
     } catch (e) {
       // fallback to paste dialog
       final controller = TextEditingController();
+      // ignore: use_build_context_synchronously
       final res = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('CSV 読み込み（貼り付け）'), content: SizedBox(width: 560, child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('ヘッダ: date,type,category,title,amount\n日付は yyyy/MM/dd 書式、type は 収入/支出'), TextField(controller: controller, maxLines: 12)])), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('読み込み'))]));
+      if (!context.mounted) return;
       if (res == true) {
         final text = controller.text.trim();
         if (text.isNotEmpty) {
@@ -192,6 +201,32 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
           await _processImportedCsv(text);
         }
       }
+    }
+  }
+
+  Future<void> _saveAsTemplateForMonth(DateTime month, List<Entry> rows) async {
+    final nameController = TextEditingController(text: '${month.year}-${month.month} のテンプレート');
+    final descController = TextEditingController(text: 'Saved from ${month.year}/${month.month}');
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('テンプレートとして保存'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: nameController, decoration: const InputDecoration(labelText: 'テンプレート名')),
+        const SizedBox(height: 8),
+        TextField(controller: descController, decoration: const InputDecoration(labelText: '説明（任意）')),
+      ]),
+      actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('保存'))],
+    ));
+    if (!context.mounted) return;
+    if (ok == true) {
+      final auth = ref.read(authStateProvider);
+      final user = auth.asData?.value;
+      if (user == null) return;
+      final uid = user.uid;
+      final items = rows.map((e) => TemplateItem(id: DateTime.now().microsecondsSinceEpoch.toString(), title: e.title, type: e.type == EntryType.income ? EntryTypeEnum.income : EntryTypeEnum.expense, amount: e.amount, categoryId: e.category, dayOfMonth: e.date.day, order: 0)).toList();
+      final t = Template(id: '', name: nameController.text.trim(), description: descController.text.trim().isEmpty ? 'Saved from ${month.year}/${month.month}' : descController.text.trim(), items: items, createdAt: Timestamp.now(), updatedAt: Timestamp.now(), createdBy: uid, lastAppliedAt: null);
+      await ref.read(templateRepositoryProvider).createTemplate(userId: uid, template: t);
+      if (!mounted) return;
+      appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('テンプレートを保存しました')));
     }
   }
 
@@ -272,6 +307,7 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
 
     if (errors.isNotEmpty) {
       final joined = errors.join('\n');
+      // ignore: use_build_context_synchronously
       await showDialog(context: context, builder: (ctx) => AlertDialog(
         title: const Text('読み込みエラー'),
         content: SizedBox(width: 560, child: SingleChildScrollView(child: SelectableText(joined))),
@@ -282,7 +318,7 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
       ));
     } else {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CSV の読み込みが完了しました')));
+      appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('CSV の読み込みが完了しました')));
     }
   }
 
@@ -313,7 +349,7 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
               if (_filterTypes.isNotEmpty && !_filterTypes.contains(e.type)) return false;
               if (_filterStartDate != null) { final d = DateTime(e.date.year, e.date.month, e.date.day); if (d.isBefore(DateTime(_filterStartDate!.year, _filterStartDate!.month, _filterStartDate!.day))) return false; }
               if (_filterEndDate != null) { final d = DateTime(e.date.year, e.date.month, e.date.day); if (d.isAfter(DateTime(_filterEndDate!.year, _filterEndDate!.month, _filterEndDate!.day))) return false; }
-              if (_filterCategoryId != null) { if (e.category != _filterCategoryId) return false; }
+              if (_filterCategoryIds.isNotEmpty) { if (!_filterCategoryIds.contains(e.category)) return false; }
               return true;
             }).toList();
 
@@ -340,9 +376,32 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                   Row(children: [
                     IconButton(onPressed: () { showDatePicker(context: context, initialDate: _selectedMonth, firstDate: DateTime(2000), lastDate: DateTime(2100)).then((picked) { if (picked != null) setState(() => _selectedMonth = DateTime(picked.year, picked.month, 1)); }); }, icon: const Icon(Icons.calendar_today)),
                     IconButton(onPressed: () => setState(() => _selectedMonth = DateTime(month.year, month.month + 1, 1)), icon: const Icon(Icons.chevron_right)),
-                    IconButton(onPressed: () async { await _exportCsv(visible, idToName); }, icon: const Icon(Icons.file_download), tooltip: '該当月をCSV出力'),
-                    IconButton(onPressed: () async { await _exportAllCsv(entries, idToName); }, icon: const Icon(Icons.cloud_download), tooltip: '全件エクスポート'),
-                    IconButton(onPressed: () async { await _importFromFileOrPaste(); }, icon: const Icon(Icons.file_upload), tooltip: 'CSV読み込み'),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (v) async {
+                        switch (v) {
+                          case 'export_month':
+                            await _exportCsv(visible, idToName);
+                            break;
+                          case 'export_all':
+                            await _exportAllCsv(entries, idToName);
+                            break;
+                          case 'import':
+                            await _importFromFileOrPaste();
+                            break;
+                          case 'save_template':
+                            await _saveAsTemplateForMonth(month, filtered2);
+                            break;
+                        }
+                      },
+                      itemBuilder: (ctx) => [
+                        PopupMenuItem(value: 'export_month', child: Row(children: const [Icon(Icons.file_download), SizedBox(width: 8), Text('該当月をCSV出力')])),
+                        PopupMenuItem(value: 'export_all', child: Row(children: const [Icon(Icons.cloud_download), SizedBox(width: 8), Text('全件エクスポート')])),
+                        PopupMenuItem(value: 'import', child: Row(children: const [Icon(Icons.file_upload), SizedBox(width: 8), Text('CSV読み込み')])),
+                        const PopupMenuDivider(),
+                        PopupMenuItem(value: 'save_template', child: Row(children: const [Icon(Icons.save_alt), SizedBox(width: 8), Text('この月をテンプレートとして保存')])),
+                      ],
+                    ),
                   ]),
                 ]),
                 const SizedBox(height: 8),
@@ -379,7 +438,58 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                           Row(children: [
                             const Text('カテゴリ:'),
                             const SizedBox(width: 8),
-                            DropdownButton<String?>(value: _filterCategoryId, hint: const Text('すべて'), items: [const DropdownMenuItem<String?>(value: null, child: Text('すべて')), ...cats.map((c) => DropdownMenuItem<String?>(value: c['id'] as String?, child: Text(c['name'] ?? '')))], onChanged: (v) => setState(() => _filterCategoryId = v)),
+                            TextButton(
+                              onPressed: () async {
+                                await showDialog(context: context, builder: (ctx) {
+                                  return StatefulBuilder(builder: (ctx2, setInner) {
+                                    return AlertDialog(
+                                      title: const Text('カテゴリで絞り込む'),
+                                      content: SingleChildScrollView(
+                                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                                          for (final c in cats)
+                                            CheckboxListTile(
+                                              value: _filterCategoryIds.contains(c['id']),
+                                              title: Text((c['name'] ?? '').toString()),
+                                              controlAffinity: ListTileControlAffinity.leading,
+                                              onChanged: (v) {
+                                                setInner(() {
+                                                  final id = c['id'] as String?;
+                                                  if (id == null) return;
+                                                  if (v == true) {
+                                                    _filterCategoryIds.add(id);
+                                                  } else {
+                                                    _filterCategoryIds.remove(id);
+                                                  }
+                                                  // also rebuild parent list UI
+                                                  setState(() {});
+                                                });
+                                              },
+                                            ),
+                                        ]),
+                                      ),
+                                      actions: [
+                                        TextButton(onPressed: () {
+                                          // 全選択
+                                          setInner(() {
+                                            for (final c in cats) {
+                                              final id = c['id'] as String?;
+                                              if (id != null) _filterCategoryIds.add(id);
+                                            }
+                                            setState(() {});
+                                          });
+                                        }, child: const Text('全選択')),
+                                        TextButton(onPressed: () {
+                                          // 全解除
+                                          setInner(() { _filterCategoryIds.clear(); setState(() {}); });
+                                        }, child: const Text('全解除')),
+                                        TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('閉じる')),
+                                      ],
+                                    );
+                                  });
+                                });
+                              },
+                              child: Text(_filterCategoryIds.isEmpty ? 'カテゴリ: すべて' : 'カテゴリ: ${_filterCategoryIds.length} 個選択'),
+                            ),
                           ]),
                           const SizedBox(height: 8),
                           Row(children: [
@@ -388,7 +498,7 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                             DropdownButton<String>(value: _sortField, items: const [DropdownMenuItem(value: 'date', child: Text('日付')), DropdownMenuItem(value: 'title', child: Text('タイトル')), DropdownMenuItem(value: 'amount', child: Text('金額')), DropdownMenuItem(value: 'category', child: Text('カテゴリ'))], onChanged: (v) => setState(() => _sortField = v ?? 'date')),
                             IconButton(onPressed: () => setState(() => _sortAsc = !_sortAsc), icon: Icon(_sortAsc ? Icons.arrow_upward : Icons.arrow_downward)),
                             const Spacer(),
-                            TextButton(onPressed: () { setState(() { _filterTitleController.clear(); _filterMinController.clear(); _filterMaxController.clear(); _filterTypes.clear(); _filterStartDate = null; _filterEndDate = null; _filterCategoryId = null; _sortField = 'date'; _sortAsc = false; }); }, child: const Text('クリア')),
+                            TextButton(onPressed: () { setState(() { _filterTitleController.clear(); _filterMinController.clear(); _filterMaxController.clear(); _filterTypes.clear(); _filterStartDate = null; _filterEndDate = null; _filterCategoryIds.clear(); _sortField = 'date'; _sortAsc = false; }); }, child: const Text('クリア')),
                           ]),
                           const SizedBox(height: 8),
                         ],
@@ -417,17 +527,18 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                                   final uid = ref.read(authStateProvider).asData?.value?.uid;
                                   if (uid == null) {
                                     if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('未認証ユーザーです')));
+                                    appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('未認証ユーザーです')));
                                     return;
                                   }
                                   final ok = await showDialog<bool>(context: context, builder: (dctx) => AlertDialog(title: const Text('削除確認'), content: const Text('この項目を削除してもよいですか？'), actions: [TextButton(onPressed: () => Navigator.of(dctx).pop(false), child: Text('キャンセル')), TextButton(onPressed: () => Navigator.of(dctx).pop(true), child: Text('削除'))]));
+                                  if (!context.mounted) return;
                                   if (ok == true) {
                                     try {
                                       final repo = ref.read(entryRepositoryProvider);
                                       await repo.deleteEntry(userId: uid, entryId: e.id);
                                     } catch (ex) {
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('削除エラー: $ex')));
+                                      appScaffoldMessengerKey.currentState?.showSnackBar(SnackBar(content: Text('削除エラー: $ex')));
                                     }
                                   }
                                 }),

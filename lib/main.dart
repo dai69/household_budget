@@ -9,6 +9,7 @@ import 'presentation/pages/list_page_clean.dart';
 import 'presentation/pages/report_page.dart';
 import 'presentation/pages/auth_page.dart';
 import 'presentation/pages/categories_page.dart';
+import 'presentation/pages/templates_page.dart';
 import 'utils/global_keys.dart';
 
 void main() async {
@@ -91,12 +92,11 @@ class _MyAppState extends ConsumerState<MyApp> {
                             actions: [
                               if (current?.email != null) TextButton(
                                 onPressed: () {
-                                  // Avoid awaiting inside dialog callback to prevent BuildContext async-gap warnings.
+                                  // Close dialog immediately, then perform network operation and report via scaffold messenger key.
+                                  Navigator.of(ctx).pop();
                                   FirebaseAuth.instance.sendPasswordResetEmail(email: current!.email!).then((_) {
-                                    Navigator.of(ctx).pop();
                                     appScaffoldMessengerKey.currentState?.showSnackBar(const SnackBar(content: Text('パスワードリセット用のメールを送信しました')));
                                   }).catchError((e) {
-                                    Navigator.of(ctx).pop();
                                     appScaffoldMessengerKey.currentState?.showSnackBar(SnackBar(content: Text('エラー: $e')));
                                   });
                                 },
@@ -104,11 +104,11 @@ class _MyAppState extends ConsumerState<MyApp> {
                               ),
                               TextButton(
                                 onPressed: () {
-                                  // sign out and close dialog without awaiting inside the dialog callback
+                                  // Close dialog immediately, then sign out. Report via scaffold messenger key.
+                                  Navigator.of(ctx).pop();
                                   FirebaseAuth.instance.signOut().then((_) {
-                                    Navigator.of(ctx).pop();
+                                    // no-op
                                   }).catchError((e) {
-                                    Navigator.of(ctx).pop();
                                     appScaffoldMessengerKey.currentState?.showSnackBar(SnackBar(content: Text('サインアウトエラー: $e')));
                                   });
                                 },
@@ -121,12 +121,16 @@ class _MyAppState extends ConsumerState<MyApp> {
                     },
                   ),
                 ),
-                IconButton(
-                  tooltip: 'カテゴリ編集',
-                  icon: const Icon(Icons.settings),
-                  onPressed: () {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CategoriesPage()));
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'categories') Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CategoriesPage()));
+                    if (v == 'templates') Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TemplatesPage()));
                   },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(value: 'categories', child: Text('カテゴリ編集')),
+                    const PopupMenuItem(value: 'templates', child: Text('テンプレート')),
+                  ],
+                  icon: const Icon(Icons.more_vert),
                 ),
                 // logout now integrated into the account dialog
               ],

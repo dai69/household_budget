@@ -74,7 +74,7 @@ class _CategoriesPageState extends ConsumerState<CategoriesPage> {
   List<double> _rgbToLab(Color color) {
     // from sRGB to XYZ then to LAB
     // Use explicit channel extraction to avoid deprecated Color accessors.
-    final v = color.value;
+    final v = color.toARGB32();
     double r = ((v >> 16) & 0xFF) / 255.0;
     double g = ((v >> 8) & 0xFF) / 255.0;
     double b = (v & 0xFF) / 255.0;
