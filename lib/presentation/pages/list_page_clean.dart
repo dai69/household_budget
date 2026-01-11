@@ -12,6 +12,15 @@ import '../../domain/template.dart';
 import '../../data/template_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+// selection mode providers (move selection state to Riverpod for AppBar coordination)
+final listSelectionModeProvider = StateProvider<bool>((ref) => false);
+final listSelectedEntryIdsProvider = StateProvider<Set<String>>((ref) => <String>{});
+// visible IDs provider (so AppBar can perform full-select on visible entries)
+final listVisibleEntryIdsProvider = StateProvider<List<String>>((ref) => <String>[]);
+
+// small helper provider to check if a specific entry is selected (limits rebuild scope)
+final isEntrySelectedProvider = Provider.family<bool, String>((ref, id) => ref.watch(listSelectedEntryIdsProvider).contains(id));
+
 class ListPageClean extends ConsumerStatefulWidget {
   const ListPageClean({super.key});
 
@@ -33,6 +42,7 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
   final Set<String> _filterCategoryIds = <String>{};
   String _sortField = 'date';
   bool _sortAsc = false;
+
 
   String formatNumber(int v) {
     final vi = v.abs();
@@ -365,14 +375,41 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
               return _sortAsc ? cmp : -cmp;
             });
 
+            // publish visible ids for AppBar actions
+            // Delay updating the provider until after the current build frame to avoid modifying providers while building.
+            WidgetsBinding.instance.addPostFrameCallback((_) { ref.read(listVisibleEntryIdsProvider.notifier).state = filtered2.map((e) => e.id).toList(); });
+
             final filteredTotal = filtered2.fold<int>(0, (prev, e) => prev + (e.type == EntryType.income ? e.amount : -e.amount));
 
             return Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  IconButton(onPressed: () => setState(() => _selectedMonth = DateTime(month.year, month.month - 1, 1)), icon: const Icon(Icons.chevron_left)),
-                  Column(children: [Text('${month.year}年 ${month.month}月', style: Theme.of(context).textTheme.titleLarge), Text('合計: ¥${formatNumber(filteredTotal)}', style: TextStyle(color: filteredTotal >= 0 ? Colors.teal : Colors.redAccent))]),
+                Row(children: [
+                  // left group: selection toggle + previous month chevron (no extra spacing)
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                      icon: Icon(ref.watch(listSelectionModeProvider) ? Icons.check_box : Icons.check_box_outline_blank),
+                      tooltip: ref.watch(listSelectionModeProvider) ? '選択モードを終了' : '選択モードを開始',
+                      onPressed: () {
+                        final mode = ref.read(listSelectionModeProvider);
+                        if (mode) {
+                          ref.read(listSelectionModeProvider.notifier).state = false;
+                          ref.read(listSelectedEntryIdsProvider.notifier).state = <String>{};
+                        } else {
+                          ref.read(listSelectionModeProvider.notifier).state = true;
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 4),
+                    IconButton(onPressed: () => setState(() => _selectedMonth = DateTime(month.year, month.month - 1, 1)), icon: const Icon(Icons.chevron_left)),
+                  ],),
+
+                  // center: month title
+                  Expanded(child: Column(children: [Text('${month.year}年 ${month.month}月', style: Theme.of(context).textTheme.titleLarge), Text('合計: ¥${formatNumber(filteredTotal)}', style: TextStyle(color: filteredTotal >= 0 ? Colors.teal : Colors.redAccent))],),),
+
+                  // right-side controls
                   Row(children: [
                     IconButton(onPressed: () { showDatePicker(context: context, initialDate: _selectedMonth, firstDate: DateTime(2000), lastDate: DateTime(2100)).then((picked) { if (picked != null) setState(() => _selectedMonth = DateTime(picked.year, picked.month, 1)); }); }, icon: const Icon(Icons.calendar_today)),
                     IconButton(onPressed: () => setState(() => _selectedMonth = DateTime(month.year, month.month + 1, 1)), icon: const Icon(Icons.chevron_right)),
@@ -402,6 +439,9 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                         PopupMenuItem(value: 'save_template', child: Row(children: const [Icon(Icons.save_alt), SizedBox(width: 8), Text('この月をテンプレートとして保存')])),
                       ],
                     ),
+                    // bulk selection toggle (moved to left side)
+                    // NOTE: the per-page inline bulk controls were removed; AppBar handles selection actions now.
+                    
                   ]),
                 ]),
                 const SizedBox(height: 8),
@@ -518,12 +558,39 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
                             final cat = idToName[e.category] ?? '';
                             final signed = e.type == EntryType.income ? e.amount : -e.amount;
                             return ListTile(
+                              leading: ref.watch(listSelectionModeProvider)
+                                  ? AnimatedSwitcher(
+                                      duration: const Duration(milliseconds: 180),
+                                      transitionBuilder: (child, anim) => SizeTransition(sizeFactor: anim, axis: Axis.horizontal, child: child),
+                                      child: Consumer(
+                                        key: ValueKey('checkbox-${e.id}'),
+                                        builder: (context, localRef, _) {
+                                          final selected = localRef.watch(isEntrySelectedProvider(e.id));
+                                          return Checkbox(value: selected, onChanged: (v) {
+                                            final current = Set<String>.from(localRef.read(listSelectedEntryIdsProvider));
+                                            if (v == true) {
+                                              current.add(e.id);
+                                            } else {
+                                              current.remove(e.id);
+                                            }
+                                            localRef.read(listSelectedEntryIdsProvider.notifier).state = current;
+                                          });
+                                        },
+                                      ),
+                                    )
+                                  : null,
+                              onLongPress: () {
+                                if (!ref.read(listSelectionModeProvider)) { ref.read(listSelectionModeProvider.notifier).state = true; }
+                                final cur = Set<String>.from(ref.read(listSelectedEntryIdsProvider));
+                                if (cur.contains(e.id)) { cur.remove(e.id); } else { cur.add(e.id); }
+                                ref.read(listSelectedEntryIdsProvider.notifier).state = cur;
+                              },
                               title: Text(e.title),
                               subtitle: Text('${cat.isNotEmpty ? '$cat • ' : ''}${formatDate(e.date)}'),
                               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                                 Text('${signed >= 0 ? '+' : '-'}¥${formatNumber(signed.abs())}', style: TextStyle(color: signed >= 0 ? Colors.teal : Colors.redAccent)),
-                                IconButton(icon: const Icon(Icons.edit), onPressed: () async { await _showEditDialog(e, cats, idToName); }),
-                                IconButton(icon: const Icon(Icons.delete), onPressed: () async {
+                                if (!ref.watch(listSelectionModeProvider)) IconButton(icon: const Icon(Icons.edit), onPressed: () async { await _showEditDialog(e, cats, idToName); }),
+                                if (!ref.watch(listSelectionModeProvider)) IconButton(icon: const Icon(Icons.delete), onPressed: () async {
                                   final uid = ref.read(authStateProvider).asData?.value?.uid;
                                   if (uid == null) {
                                     if (!mounted) return;
