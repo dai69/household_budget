@@ -327,36 +327,68 @@ class _CategoriesPageState extends ConsumerState<CategoriesPage> {
     final catsList = List<Map<String, dynamic>>.from(catsRaw);
     final catsExcludingThis = catsList.where((c) => (c['id'] as String?) != id).toList();
 
-    final pickedColor = await showDialog<int?>(context: context, builder: (ctx) {
-      int current = selectedColor == 0 ? _pickUnusedColorFromList(catsExcludingThis) : selectedColor;
-      return AlertDialog(
-        title: const Text('カテゴリ編集'),
-        content: StatefulBuilder(builder: (context, setState) {
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: '名称')),
-              const SizedBox(height: 12),
-              Row(children: [
-                Container(width: 36, height: 36, decoration: BoxDecoration(color: Color(current == 0 ? 0xFF2196F3 : current), shape: BoxShape.circle)),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () async {
-                    final picked = await _pickRichColorDialog(initial: current == 0 ? null : current);
-                    if (picked != null) setState(() => current = picked);
+    final nameFn = FocusNode();
+    int? pickedColor;
+    try {
+      pickedColor = await showDialog<int?>(
+        context: context,
+        builder: (ctx) {
+          int current = selectedColor == 0 ? _pickUnusedColorFromList(catsExcludingThis) : selectedColor;
+          return AnimatedPadding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            duration: const Duration(milliseconds: 120),
+            curve: Curves.easeOut,
+            child: MediaQuery.removeViewInsets(
+              removeBottom: true,
+              context: ctx,
+              child: AlertDialog(
+                insetPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+                title: const Text('カテゴリ編集'),
+                content: SingleChildScrollView(
+                  child: StatefulBuilder(
+                    builder: (context, setState) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Builder(builder: (fieldCtx) {
+                            nameFn.addListener(() {
+                              if (nameFn.hasFocus) {
+                                Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); });
+                              }
+                            });
+                            return TextField(controller: nameController, focusNode: nameFn, decoration: const InputDecoration(labelText: '名称'), onTap: () { FocusScope.of(fieldCtx).requestFocus(nameFn); Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); }); });
+                          }),
+                          const SizedBox(height: 12),
+                          Row(
+                          children: [
+                            Container(width: 36, height: 36, decoration: BoxDecoration(color: Color(current == 0 ? 0xFF2196F3 : current), shape: BoxShape.circle)),
+                            const SizedBox(width: 8),
+                            ElevatedButton(
+                              onPressed: () async {
+                                final picked = await _pickRichColorDialog(initial: current == 0 ? null : current);
+                                if (picked != null) setState(() => current = picked);
+                              },
+                              child: const Text('色を選択'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
                   },
-                  child: const Text('色を選択'),
                 ),
-              ]),
-            ],
-          );
-        }),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('キャンセル')),
-          ElevatedButton(onPressed: () => Navigator.of(ctx).pop(current), child: const Text('保存')),
-        ],
-      );
-    });
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('キャンセル')),
+                ElevatedButton(onPressed: () => Navigator.of(ctx).pop(current), child: const Text('保存')),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    } finally {
+      nameFn.dispose();
+    }
 
     if (pickedColor != null) {
       final authState = ref.read(authStateProvider);

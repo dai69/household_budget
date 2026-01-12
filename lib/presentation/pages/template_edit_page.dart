@@ -54,51 +54,116 @@ class _TemplateEditPageState extends ConsumerState<TemplateEditPage> {
 
     final cats = ref.read(categoriesStreamProvider).maybeWhen(data: (v) => v, orElse: () => []);
 
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: Text(item == null ? '項目追加' : '項目編集'),
-      content: StatefulBuilder(builder: (ctx2, setInner) {
-        return Column(mainAxisSize: MainAxisSize.min, children: [
-          DropdownButtonFormField<String>(
-            initialValue: type == EntryTypeEnum.income ? 'income' : 'expense',
-            decoration: const InputDecoration(labelText: '種類'),
-            items: const [
-              DropdownMenuItem(value: 'expense', child: Text('支出')),
-              DropdownMenuItem(value: 'income', child: Text('収入')),
-            ],
-            onChanged: (v) {
-              setInner(() {
-                type = (v == 'income') ? EntryTypeEnum.income : EntryTypeEnum.expense;
-              });
-            },
+    final titleFn = FocusNode();
+    final amountFn = FocusNode();
+    final dayFn = FocusNode();
+    bool? ok;
+    try {
+      ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AnimatedPadding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: MediaQuery.removeViewInsets(
+            removeBottom: true,
+            context: ctx,
+            child: AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+              title: Text(item == null ? '項目追加' : '項目編集'),
+              content: SingleChildScrollView(child: StatefulBuilder(builder: (ctx2, setInner) {
+                return Column(mainAxisSize: MainAxisSize.min, children: [
+                DropdownButtonFormField<String>(
+                  initialValue: type == EntryTypeEnum.income ? 'income' : 'expense',
+                  decoration: const InputDecoration(labelText: '種類'),
+                  items: const [
+                    DropdownMenuItem(value: 'expense', child: Text('支出')),
+                    DropdownMenuItem(value: 'income', child: Text('収入')),
+                  ],
+                  onChanged: (v) {
+                    setInner(() {
+                      type = (v == 'income') ? EntryTypeEnum.income : EntryTypeEnum.expense;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String?>(
+                  initialValue: selectedCategoryId,
+                  decoration: const InputDecoration(labelText: 'カテゴリ（マスターから選択）'),
+                  items: [
+                    const DropdownMenuItem<String?>(value: null, child: Text('- 選択しない -')),
+                    ...cats.map((c) {
+                      final id = c['id'] as String?;
+                      final name = (c['name'] ?? '').toString();
+                      return DropdownMenuItem<String?>(value: id, child: Text(name));
+                    }),
+                  ],
+                  onChanged: (v) {
+                    setInner(() {
+                      selectedCategoryId = v;
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                Builder(builder: (fieldCtx) {
+                  Future<void> scrollIntoView() async {
+                    for (var i = 0; i < 6; i++) {
+                      await Future.delayed(Duration(milliseconds: i == 0 ? 50 : 80));
+                      final bottom = MediaQuery.of(fieldCtx).viewInsets.bottom;
+                      if (bottom > 0) {
+                        Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                        return;
+                      }
+                    }
+                    Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                  }
+                  titleFn.addListener(() { if (titleFn.hasFocus) scrollIntoView(); });
+                  return TextField(controller: titleCtl, focusNode: titleFn, decoration: const InputDecoration(labelText: 'タイトル'), onTap: () { FocusScope.of(fieldCtx).requestFocus(titleFn); scrollIntoView(); });
+                }),
+                const SizedBox(height: 8),
+                Builder(builder: (fieldCtx) {
+                  Future<void> scrollIntoView() async {
+                    for (var i = 0; i < 6; i++) {
+                      await Future.delayed(Duration(milliseconds: i == 0 ? 50 : 80));
+                      final bottom = MediaQuery.of(fieldCtx).viewInsets.bottom;
+                      if (bottom > 0) {
+                        Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                        return;
+                      }
+                    }
+                    Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                  }
+                  amountFn.addListener(() { if (amountFn.hasFocus) scrollIntoView(); });
+                  return TextField(controller: amountCtl, focusNode: amountFn, decoration: const InputDecoration(labelText: '金額'), keyboardType: TextInputType.number, onTap: () { FocusScope.of(fieldCtx).requestFocus(amountFn); scrollIntoView(); });
+                }),
+                const SizedBox(height: 8),
+                Builder(builder: (fieldCtx) {
+                  Future<void> scrollIntoView() async {
+                    for (var i = 0; i < 6; i++) {
+                      await Future.delayed(Duration(milliseconds: i == 0 ? 50 : 80));
+                      final bottom = MediaQuery.of(fieldCtx).viewInsets.bottom;
+                      if (bottom > 0) {
+                        Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                        return;
+                      }
+                    }
+                    Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                  }
+                  dayFn.addListener(() { if (dayFn.hasFocus) scrollIntoView(); });
+                  return TextField(controller: dayCtl, focusNode: dayFn, decoration: const InputDecoration(labelText: '日（1-31）'), keyboardType: TextInputType.number, onTap: () { FocusScope.of(fieldCtx).requestFocus(dayFn); scrollIntoView(); });
+                }),
+              ]);
+            })), 
+            actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('保存'))],
           ),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String?>(
-            initialValue: selectedCategoryId,
-            decoration: const InputDecoration(labelText: 'カテゴリ（マスターから選択）'),
-            items: [
-              const DropdownMenuItem<String?>(value: null, child: Text('- 選択しない -')),
-              ...cats.map((c) {
-                final id = c['id'] as String?;
-                final name = (c['name'] ?? '').toString();
-                return DropdownMenuItem<String?>(value: id, child: Text(name));
-              }),
-            ],
-            onChanged: (v) {
-              setInner(() {
-                selectedCategoryId = v;
-              });
-            },
-          ),
-          const SizedBox(height: 8),
-          TextField(controller: titleCtl, decoration: const InputDecoration(labelText: 'タイトル')),
-          const SizedBox(height: 8),
-          TextField(controller: amountCtl, decoration: const InputDecoration(labelText: '金額'), keyboardType: TextInputType.number),
-          const SizedBox(height: 8),
-          TextField(controller: dayCtl, decoration: const InputDecoration(labelText: '日（1-31）'), keyboardType: TextInputType.number),
-        ]);
-      }),
-      actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('保存'))],
-    ));
+        ),
+      ),
+    );
+    } finally {
+      titleFn.dispose();
+      amountFn.dispose();
+      dayFn.dispose();
+    }
 
     if (ok != true) { return; }
     final newItem = TemplateItem(

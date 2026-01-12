@@ -68,38 +68,84 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
     // Show dialog to collect edited values. Do not perform async repo update inside dialog to
     // avoid using BuildContext across async gaps. Return the updated Entry from the dialog
     // then perform the update after the dialog completes.
-    final updatedEntry = await showDialog<Entry?>(context: context, builder: (ctx) {
-      return AlertDialog(
-        title: const Text('項目を編集'),
-        content: SingleChildScrollView(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-            TextButton.icon(onPressed: () { showDatePicker(context: ctx, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100)).then((d) { if (d != null) selectedDate = d; }); }, icon: const Icon(Icons.date_range), label: Text(formatDate(selectedDate))),
-            const SizedBox(height: 8),
-            DropdownButton<EntryType>(value: selectedType, items: const [DropdownMenuItem(value: EntryType.income, child: Text('収入')), DropdownMenuItem(value: EntryType.expense, child: Text('支出'))], onChanged: (v) { if (v != null) selectedType = v; }),
-            const SizedBox(height: 8),
-            DropdownButton<String>(value: selectedCategory, items: cats.map<DropdownMenuItem<String>>((c) { final id = c['id'] as String? ?? ''; final name = (c['name'] ?? '') as String; return DropdownMenuItem(value: id, child: Text(name)); }).toList(), onChanged: (v) { if (v != null) selectedCategory = v; }),
-            const SizedBox(height: 8),
-            TextField(controller: titleController, decoration: const InputDecoration(labelText: 'タイトル')),
-            const SizedBox(height: 8),
-            TextField(controller: amountController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '金額')),
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('キャンセル')),
-          ElevatedButton(onPressed: () {
-            // validate and return updated entry (do not call repos here)
-            final t = titleController.text.trim();
-            final a = int.tryParse(amountController.text.replaceAll(',', '').trim());
-            if (t.isEmpty || a == null) {
-              ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(const SnackBar(content: Text('タイトルと金額を正しく入力してください')));
-              return;
-            }
-            final updated = entry.copyWith(date: selectedDate, type: selectedType, category: selectedCategory, title: t, amount: a);
-            Navigator.of(ctx).pop(updated);
-          }, child: const Text('保存')),
-        ],
-      );
-    });
+final titleFn = FocusNode();
+    final amountFn = FocusNode();
+    Entry? updatedEntry;
+    try {
+      updatedEntry = await showDialog<Entry?>(context: context, builder: (ctx) {
+        return AnimatedPadding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: MediaQuery.removeViewInsets(
+            removeBottom: true,
+            context: ctx,
+            child: AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+              title: const Text('項目を編集'),
+              content: SingleChildScrollView(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                  TextButton.icon(onPressed: () { showDatePicker(context: ctx, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100)).then((d) { if (d != null) selectedDate = d; }); }, icon: const Icon(Icons.date_range), label: Text(formatDate(selectedDate))),
+                  const SizedBox(height: 8),
+                  DropdownButton<EntryType>(value: selectedType, items: const [DropdownMenuItem(value: EntryType.income, child: Text('収入')), DropdownMenuItem(value: EntryType.expense, child: Text('支出'))], onChanged: (v) { if (v != null) selectedType = v; }),
+                  const SizedBox(height: 8),
+                  DropdownButton<String>(value: selectedCategory, items: cats.map<DropdownMenuItem<String>>((c) { final id = c['id'] as String? ?? ''; final name = (c['name'] ?? '') as String; return DropdownMenuItem(value: id, child: Text(name)); }).toList(), onChanged: (v) { if (v != null) selectedCategory = v; }),
+                  const SizedBox(height: 8),
+                  Builder(builder: (fieldCtx) {
+                    Future<void> scrollIntoView() async {
+                      for (var i = 0; i < 6; i++) {
+                        await Future.delayed(Duration(milliseconds: i == 0 ? 50 : 80));
+                        final bottom = MediaQuery.of(fieldCtx).viewInsets.bottom;
+                        if (bottom > 0) {
+                          Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                          return;
+                        }
+                      }
+                      Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                    }
+                    titleFn.addListener(() { if (titleFn.hasFocus) scrollIntoView(); });
+                    return TextField(controller: titleController, focusNode: titleFn, decoration: const InputDecoration(labelText: 'タイトル'), onTap: () { FocusScope.of(fieldCtx).requestFocus(titleFn); scrollIntoView(); });
+                  }),
+                  const SizedBox(height: 8),
+                  Builder(builder: (fieldCtx) {
+                    Future<void> scrollIntoView() async {
+                      for (var i = 0; i < 6; i++) {
+                        await Future.delayed(Duration(milliseconds: i == 0 ? 50 : 80));
+                        final bottom = MediaQuery.of(fieldCtx).viewInsets.bottom;
+                        if (bottom > 0) {
+                          Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                          return;
+                        }
+                      }
+                      Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                    }
+                    amountFn.addListener(() { if (amountFn.hasFocus) scrollIntoView(); });
+                    return TextField(controller: amountController, focusNode: amountFn, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '金額'), onTap: () { FocusScope.of(fieldCtx).requestFocus(amountFn); scrollIntoView(); });
+                  }),
+                ]),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(null), child: const Text('キャンセル')),
+                ElevatedButton(onPressed: () {
+                  // validate and return updated entry (do not call repos here)
+                  final t = titleController.text.trim();
+                  final a = int.tryParse(amountController.text.replaceAll(',', '').trim());
+                  if (t.isEmpty || a == null) {
+                    ScaffoldMessenger.maybeOf(ctx)?.showSnackBar(const SnackBar(content: Text('タイトルと金額を正しく入力してください')));
+                    return;
+                  }
+                  final updated = entry.copyWith(date: selectedDate, type: selectedType, category: selectedCategory, title: t, amount: a);
+                  Navigator.of(ctx).pop(updated);
+                }, child: const Text('保存')),
+              ],
+            ),
+          ),
+        );
+      });
+    } finally {
+      titleFn.dispose();
+      amountFn.dispose();
+    }
 
     if (updatedEntry != null) {
       // perform update outside the dialog (async) and then show snackbar using this widget's context
@@ -185,8 +231,52 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
       final content = await pickFileAndRead();
       if (content == null) {
         final controller = TextEditingController();
-        // ignore: use_build_context_synchronously
-        final res = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('CSV 読み込み（貼り付け）'), content: SizedBox(width: 560, child: Column(mainAxisSize: MainAxisSize.min, children: [const Text('ヘッダ: date,type,category,title,amount\n日付は yyyy/MM/dd 書式、type は 収入/支出'), TextField(controller: controller, maxLines: 12)])), actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('読み込み'))]));
+        final pasteFn = FocusNode();
+        bool? res;
+        try {
+          // ignore: use_build_context_synchronously
+          res = await showDialog<bool>(
+            context: context,
+            builder: (ctx) => AnimatedPadding(
+              padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
+              child: MediaQuery.removeViewInsets(
+                removeBottom: true,
+                context: ctx,
+                child: AlertDialog(
+                  insetPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+                  title: const Text('CSV 読み込み（貼り付け）'),
+                  content: SingleChildScrollView(
+                    child: SizedBox(
+                      width: 560,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Text('ヘッダ: date,type,category,title,amount\n日付は yyyy/MM/dd 書式、type は 収入/支出'),
+                          Builder(builder: (fieldCtx) {
+                            Future<void> scrollIntoView() async {
+                              await Future.delayed(const Duration(milliseconds: 80));
+                              Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                            }
+                            pasteFn.addListener(() { if (pasteFn.hasFocus) scrollIntoView(); });
+                            return TextField(controller: controller, focusNode: pasteFn, maxLines: 12, onTap: () { FocusScope.of(fieldCtx).requestFocus(pasteFn); Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); }); });
+                          }),
+                        ],
+                      ),
+                    ),
+                  ),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')),
+                    ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('読み込み')),
+                  ],
+                ),
+              ),
+            ),
+          );
+        } finally {
+          pasteFn.dispose();
+        }
         if (!context.mounted) return;
         if (res == true) {
           final text = controller.text.trim();
@@ -217,15 +307,45 @@ class _ListPageCleanState extends ConsumerState<ListPageClean> {
   Future<void> _saveAsTemplateForMonth(DateTime month, List<Entry> rows) async {
     final nameController = TextEditingController(text: '${month.year}-${month.month} のテンプレート');
     final descController = TextEditingController(text: 'Saved from ${month.year}/${month.month}');
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('テンプレートとして保存'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: nameController, decoration: const InputDecoration(labelText: 'テンプレート名')),
-        const SizedBox(height: 8),
-        TextField(controller: descController, decoration: const InputDecoration(labelText: '説明（任意）')),
-      ]),
-      actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('保存'))],
-    ));
+    final nameFn = FocusNode();
+    final descFn = FocusNode();
+    bool? ok;
+    try {
+      ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AnimatedPadding(
+          padding: MediaQuery.of(ctx).viewInsets + const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: AlertDialog(
+            title: const Text('テンプレートとして保存'),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+              Builder(builder: (fieldCtx) {
+                nameFn.addListener(() {
+                  if (nameFn.hasFocus) {
+                    Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); });
+                  }
+                });
+                return TextField(controller: nameController, focusNode: nameFn, decoration: const InputDecoration(labelText: 'テンプレート名'), onTap: () { FocusScope.of(fieldCtx).requestFocus(nameFn); Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); }); });
+              }),
+              const SizedBox(height: 8),
+              Builder(builder: (fieldCtx) {
+                descFn.addListener(() {
+                  if (descFn.hasFocus) {
+                    Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); });
+                  }
+                });
+                return TextField(controller: descController, focusNode: descFn, decoration: const InputDecoration(labelText: '説明（任意）'), onTap: () { FocusScope.of(fieldCtx).requestFocus(descFn); Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); }); });
+              }),
+            ]),
+            actions: [TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')), ElevatedButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('保存'))],
+          ),
+        ),
+      );
+    } finally {
+      nameFn.dispose();
+      descFn.dispose();
+    }
     if (!context.mounted) return;
     if (ok == true) {
       final auth = ref.read(authStateProvider);

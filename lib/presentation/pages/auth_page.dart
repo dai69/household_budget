@@ -127,21 +127,48 @@ class _AuthPageState extends State<AuthPage> {
 
   Future<void> _showPasswordResetDialog() async {
     final controller = TextEditingController(text: _emailController.text);
-    final res = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('パスワードを忘れた場合'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(labelText: '登録済みのメールアドレス'),
-          keyboardType: TextInputType.emailAddress,
+    final resetFn = FocusNode();
+    bool? res;
+    try {
+      res = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AnimatedPadding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          child: MediaQuery.removeViewInsets(
+            removeBottom: true,
+            context: ctx,
+            child: AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+              title: const Text('パスワードを忘れた場合'),
+              content: Builder(builder: (fieldCtx) {
+                resetFn.addListener(() {
+                  if (resetFn.hasFocus) {
+                    Future.delayed(const Duration(milliseconds: 80), () {
+                      Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200));
+                    });
+                  }
+                });
+                return TextField(
+                  controller: controller,
+                  focusNode: resetFn,
+                  decoration: const InputDecoration(labelText: '登録済みのメールアドレス'),
+                  keyboardType: TextInputType.emailAddress,
+                  onTap: () { FocusScope.of(fieldCtx).requestFocus(resetFn); Future.delayed(const Duration(milliseconds: 80), () { Scrollable.ensureVisible(fieldCtx, duration: const Duration(milliseconds: 200)); }); },
+                );
+              }),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')),
+                TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('送信')),
+              ],
+            ),
+          ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('キャンセル')),
-          TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('送信')),
-        ],
-      ),
-    );
+      );
+    } finally {
+      resetFn.dispose();
+    }
 
     if (res == true) {
       final email = controller.text.trim();
